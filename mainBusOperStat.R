@@ -1,6 +1,7 @@
 library(tidyverse)
 library(lubridate)
-library(Ckmeans.1d.dp)
+#library(Ckmeans.1d.dp)
+`%notin%` <- Negate(`%in%`)
 
 
 setwd("C:/Users/WONGYUN/Documents/GitHub/hwaseongBusOperStat")
@@ -23,35 +24,73 @@ for (i in 1:length(folders)) {
   }
 }
 
-#### OPEN DATA ####
-for (i in 1:nrow(avail_index)) {
-  this_row <- avail_index[i,]
-  if (this_row$date != "2022-10-25") {next}
-  this_data <- read.csv(paste0("./rawData/",this_row$folder,"/",this_row$filename))
-  this_data$timestamp <- substr(this_data$querytime,10,15)
-  this_data$hms <- lubridate::hms(format(strptime(this_data$timestamp, format = "%H%M%S"), format = "%H:%M:%S"))
-  this_data["remainSeatCnt"][this_data["remainSeatCnt"] == -1] <- NA
+#########################################################
+## FOR FOR THIS WEEK's ANALYSIS ONLY ONE TABLE IS USED ##
+#########################################################
+interest <- c(10)
 
-  clustering <- Ckmeans.1d.dp::Ckmeans.1d.dp(as.numeric(filter(this_data,stationSeq==1)$timestamp),k=c(1:30))
+#### CALL DATA ####
+for (i in 1:nrow(avail_index)) {
+  if (i %notin% interest) {next} #ignore non-interest data
+  #### general import ####
+  this_row <- avail_index[i,]
+  this_data <- read.csv(paste0("./rawData/",this_row$folder,"/",this_row$filename))
+  this_data$datetime <- as.POSIXct(strptime(this_data$querytime,format=paste0("%Y%m%d-%H%M%S")))
+  this_data["remainSeatCnt"][this_data["remainSeatCnt"] == -1] <- NA
+  
+  #### dispatch categorisation ####
+  #### clustering method ####
+  clustering <-
+    Ckmeans.1d.dp::Ckmeans.1d.dp(as.numeric(filter(this_data,stationSeq==1)$datetime),k=c(1:30))
   this_data[this_data$stationSeq==1,"dispatch"] <- clustering$cluster
-  if ("dep_schedule" %in% ls()) {
-  dep_schedule <- rbind(dep_schedule,cbind(line=this_row$line,aggregate(timestamp~plateNo+dispatch,FUN=min,this_data)))
-  } else {
-    dep_schedule <- cbind(line=this_row$line,aggregate(timestamp~plateNo+dispatch,FUN=min,this_data))
+  deptimes <- 
+    arrange(aggregate(datetime~dispatch+plateNo,FUN=min,data=this_data),dispatch)
+  #### manual ####
+  for (j in 1:length(unique(this_data$plateNo))) {
+    this_plate <- unique(this_data$plateNo)[j]
+    dispatch_times <- filter(deptimes, plateNo == this_plate)
+    for (dispatch in 1:nrow(dispatch_times)) {
+      this_data[this_data$datetime > dispatch_times$datetime[dispatch] & this_data$plateNo==this_plate, ]$dispatch <-
+        dispatch_times$dispatch[dispatch]
+    }
   }
   
-  # for (bus in unique(this_data$plateNo)) {
-  #  this_bus <- this_data |>
-  #    filter(plateNo==bus)
-  #  
-  # }
+  #### time-space diagram ####
+  timespace <- ggplot(data=this_data,mapping=aes(x=datetime,y=stationSeq,colour=factor(dispatch))) +
+    geom_point(size=2) +
+    labs(title=paste0(this_row$line," [AllDots]"), x = "시간", y = "정류장순번", color = "차량번호") +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(timespace)
+  #ggsave(paste0("./plots/timespace/",this_row$line,"_",this_row$date,".png"),timespace)
   
-  # timespace <- ggplot(data=this_data,mapping=aes(x=timestamp,y=stationSeq,colour=plateNo)) +
-  #   labs(title=this_row$line, x = "시간", y = "정류장순번", color = "차량번호") +
-  #   theme(plot.title = element_text(hjust = 0.5)) +
-  #   scale_x_discrete(labels=NULL) +
-  #   geom_point(size=2)
-  #ggsave(paste0("./plots/timespace/",this_row$line,"_",this_row$date,".png"),timespace)  
+  
+  #### arrival time by stn ####
+  arr_times1 <- aggregate(datetime~dispatch+stationSeq,this_data,FUN=min)
+  #### diagram ####
+  arronly <- ggplot(data=arr_times1,mapping=aes(x=datetime,y=stationSeq,group_by=dispatch,colour=factor(dispatch))) +
+    geom_step(size=1) +
+    labs(title=paste0(this_row$line," [ArrOnly]"), x = "시간", y = "정류장순번", color = "편성") +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(arronly)
+  
+  arr_table <- reshape(arr_times1,idvar=c("dispatch"),timevar="stationSeq",direction="wide")
+  write.csv(arr_table,"./arr_times.csv",row.names=F)
+  
+  #### vacancies by stn ####
+  arr_times2 <- this_data |>
+    group_by(dispatch,stationSeq) |>
+    slice(which.min(datetime)) |>
+    select(c("dispatch","datetime","stationSeq","remainSeatCnt")) |>
+    as.data.frame()
+  #### diagram ####
+  vacancies <- ggplot(data=arr_times2,mapping=aes(x=datetime,y=remainSeatCnt,group_by=dispatch,colour=factor(dispatch))) +
+    geom_line(size=1) +
+    labs(title=paste0(this_row$line," [Vacancies]"), x = "시간", y = "정류장순번", color = "편성") +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(vacancies)
+  
+  seat_table <- reshape(arr_times2[,c("dispatch","stationSeq","remainSeatCnt")],idvar=c("dispatch"),timevar="stationSeq",direction="wide")
+  write.csv(seat_table,"./empty_seats.csv",row.names=F)
 }
 
 
