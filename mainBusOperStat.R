@@ -1,6 +1,7 @@
 library(tidyverse)
 library(lubridate)
-#library(Ckmeans.1d.dp)
+library(plotly)
+library(Ckmeans.1d.dp)
 `%notin%` <- Negate(`%in%`)
 
 
@@ -24,10 +25,10 @@ for (i in 1:length(folders)) {
   }
 }
 
-#########################################################
-## FOR FOR THIS WEEK's ANALYSIS ONLY ONE TABLE IS USED ##
-#########################################################
-interest <- c(10)
+#####################################################
+## FOR THIS WEEK's ANALYSIS ONLY ONE TABLE IS USED ##
+#####################################################
+interest <- c(10) #list of interested tables
 
 #### CALL DATA ####
 for (i in 1:nrow(avail_index)) {
@@ -55,12 +56,13 @@ for (i in 1:nrow(avail_index)) {
     }
   }
   
-  #### time-space diagram ####
-  timespace <- ggplot(data=this_data,mapping=aes(x=datetime,y=stationSeq,colour=factor(dispatch))) +
+  ### time-space diagram ####
+  timespace <- ggplot(data=this_data,mapping=aes(x=datetime,y=stationSeq,colour=factor(plateNo))) +
     geom_point(size=2) +
     labs(title=paste0(this_row$line," [AllDots]"), x = "시간", y = "정류장순번", color = "차량번호") +
-    theme(plot.title = element_text(hjust = 0.5))
-  print(timespace)
+    theme(plot.title = element_text(hjust = 0.5),legend.key=element_blank(),legend.title.align=0.5) +
+    guides(colour=guide_legend(nrow=10))
+  print(ggplotly(timespace))#print(timespace)
   #ggsave(paste0("./plots/timespace/",this_row$line,"_",this_row$date,".png"),timespace)
   
   
@@ -70,11 +72,14 @@ for (i in 1:nrow(avail_index)) {
   arronly <- ggplot(data=arr_times1,mapping=aes(x=datetime,y=stationSeq,group_by=dispatch,colour=factor(dispatch))) +
     geom_step(size=1) +
     labs(title=paste0(this_row$line," [ArrOnly]"), x = "시간", y = "정류장순번", color = "편성") +
-    theme(plot.title = element_text(hjust = 0.5))
-  print(arronly)
+    theme(plot.title = element_text(hjust = 0.5),legend.key=element_blank(),legend.title.align=0.5) +
+    guides(colour=guide_legend(nrow=10))
+  print(ggplotly(arronly))#print(arronly)
+  #ggsave(paste0("./plots/arronly/",this_row$line,"_",this_row$date,"_arronly.png"),arronly)
+  
   
   arr_table <- reshape(arr_times1,idvar=c("dispatch"),timevar="stationSeq",direction="wide")
-  write.csv(arr_table,"./arr_times.csv",row.names=F)
+  #write.csv(arr_table,"./arr_times.csv",row.names=F)
   
   #### vacancies by stn ####
   arr_times2 <- this_data |>
@@ -83,14 +88,19 @@ for (i in 1:nrow(avail_index)) {
     select(c("dispatch","datetime","stationSeq","remainSeatCnt")) |>
     as.data.frame()
   #### diagram ####
-  vacancies <- ggplot(data=arr_times2,mapping=aes(x=datetime,y=remainSeatCnt,group_by=dispatch,colour=factor(dispatch))) +
+  vacancies <- ggplot(data=arr_times2,mapping=aes(x=stationSeq,y=remainSeatCnt,group_by=dispatch,colour=factor(dispatch))) +
     geom_line(size=1) +
-    labs(title=paste0(this_row$line," [Vacancies]"), x = "시간", y = "정류장순번", color = "편성") +
-    theme(plot.title = element_text(hjust = 0.5))
-  print(vacancies)
+    labs(title=paste0(this_row$line," [Vacancies]"), x = "시간", y = "잔여좌석", color = "편성") +
+    theme(plot.title = element_text(hjust = 0.5),legend.key=element_blank(),legend.title.align=0.5) +
+    guides(colour=guide_legend(nrow=10))
+  print(ggplotly(vacancies))#print(vacancies)
+  #ggsave(paste0("./plots/vacancies/",this_row$line,"_",this_row$date,"_vacancies.png"),vacancies)
   
   seat_table <- reshape(arr_times2[,c("dispatch","stationSeq","remainSeatCnt")],idvar=c("dispatch"),timevar="stationSeq",direction="wide")
-  write.csv(seat_table,"./empty_seats.csv",row.names=F)
+  #write.csv(seat_table,"./empty_seats.csv",row.names=F)
+  
+  #### crowdedness index ####
+  
 }
 
 
